@@ -1,0 +1,175 @@
+---
+title: "Final Project"
+author: "Sai Ananthula"
+date: "2023-04-08"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+## Loading statements for needed packages
+```{r echo=TRUE}
+library(tidyverse)
+library(naniar)
+library(simputation)
+library(readxl)
+library(lubridate)
+library(corrplot)
+library(vtable)
+```
+
+
+
+## Extract data from Excel sheets into 2 tibbles
+```{r}
+Raw_Data <- read_excel("RawData.xlsx", sheet = "Raw-Data")
+Calendar <- read_excel("RawData.xlsx", sheet = "Calendar")
+```
+
+
+## Calculate number of missing values and then the number of rows in the overall data set
+```{r}
+n_miss(Raw_Data)
+nrow(Raw_Data)
+```
+
+
+## Standardize column names
+```{r}
+
+Raw_Data<- Raw_Data %>%
+  rename(Ship_Date = `Ship Date`, PO_Download_Date = `PO Download Date`, Ship_Date = `Ship Date`, Receipt_Date = `Receipt Date`, Ship_Mode = `Ship Mode`)
+
+```
+
+
+## Drop rows with missing data and then recalculate number of rows in data set
+```{r}
+Raw_Data <- Raw_Data %>%
+  drop_na(Ship_Date)
+
+nrow(Raw_Data)
+```
+
+## Function to add quarter and year to Raw Data set
+```{r}
+
+quarter_year <- function(data_master, data_secondary)
+{
+  data_master <- data_master %>%
+    mutate(Quarter = "",Year = 0)
+  
+  for(i in 1:nrow(data_master)) 
+  {
+    
+      for(j in 1:nrow(data_secondary))
+      {
+          if(data_master[i,"Receipt_Date"] >= data_secondary[j,"Start_Date"] &      
+             data_master[i,"Receipt_Date"] <= data_secondary[j,"End_date"] ) 
+            {
+              
+              data_master[i,"Quarter"] <- data_master[i,"Quarter"] %>%
+                       mutate(Quarter = as.character(data_secondary[j,"Quarter"]))
+              
+              data_master[i,"Year"] <- data_master[i,"Year"] %>%
+                       mutate(Year = as.numeric(data_secondary[j,"Year"]))
+            }
+            
+            
+      }
+    
+
+  }
+  
+  return(data_master)
+  
+}
+
+Raw_Data_QY <- quarter_year(Raw_Data,Calendar)
+
+```
+
+
+## Calculate Transit/Manufacturing columns
+```{r}
+Raw_Data_QY <- Raw_Data_QY %>%
+  mutate(In_Transit_Lead_Time = difftime(Receipt_Date, Ship_Date,units = "days" )) %>%
+  mutate(Manufacturing_Lead_Time = round(difftime(Ship_Date, PO_Download_Date,units = "days" )))
+```
+## Remove rows with lead time values less than 0
+```{r}
+Raw_Data_QY <- Raw_Data_QY %>%
+  filter(In_Transit_Lead_Time > 0 & Manufacturing_Lead_Time > 0)
+```
+
+## Calculate number of rows after removal
+```{r}
+
+nrow(Raw_Data_QY)
+```
+
+## Build new tibble with all columns converted to numeric
+```{r}
+Raw_Data_Numeric <- Raw_Data_QY %>% 
+  mutate(LOB = as.numeric(as.factor(LOB))) %>%
+  mutate(Origin = as.numeric(as.factor(Origin))) %>%
+  mutate(Ship_Mode = as.numeric(as.factor(Ship_Mode))) %>%
+  mutate(Quarter = as.numeric(as.factor(Quarter))) %>%
+  mutate(PO_Download_Date = as.numeric(PO_Download_Date)) %>%
+  mutate(Ship_Date = as.numeric(Ship_Date)) %>%
+  mutate(Receipt_Date = as.numeric(Receipt_Date)) %>%
+  mutate(In_Transit_Lead_Time = as.numeric(In_Transit_Lead_Time)) %>%
+  mutate(Manufacturing_Lead_Time = as.numeric(Manufacturing_Lead_Time))
+  
+```
+
+
+## Remove Year
+```{r}
+Raw_Data_Numeric <- Raw_Data_Numeric %>%
+  select(-Year)
+```
+
+
+
+## Calculate correlation Table
+```{r}
+cor(Raw_Data_Numeric)
+```
+
+## Generate Correlation Plots
+```{r}
+corrplot(cor(Raw_Data_Numeric), method = "color", diag = FALSE, type = "lower")
+corrplot(cor(Raw_Data_Numeric), method = "number", diag = FALSE, type = "lower")
+```
+
+## Generate Summary Statistics
+```{r}
+st(Raw_Data_QY, vars = c("LOB","Origin","Quarter","Ship_Mode","In_Transit_Lead_Time","Manufacturing_Lead_Time") )
+```
+
+## Convert Lead Times To Numeric
+```{r}
+Raw_Data_Numeric_2 <- Raw_Data_QY %>% 
+  mutate(In_Transit_Lead_Time = as.numeric(In_Transit_Lead_Time)) %>%
+  mutate(Manufacturing_Lead_Time = as.numeric(Manufacturing_Lead_Time))
+  
+```
+
+## Graphs Comparing Predictor Variables Against Transit Lead Time
+```{r}
+
+ggplot(Raw_Data_Numeric_2, aes(Origin,In_Transit_Lead_Time)) +
+ stat_summary(geom =  "col", fun = mean) 
+
+ggplot(Raw_Data_Numeric_2, aes(Ship_Mode,In_Transit_Lead_Time, fill = )) +
+ stat_summary(geom =  "col", fun = mean)
+
+
+ggplot(Raw_Data_Numeric_2, aes(Origin, In_Transit_Lead_Time, color = Ship_Mode)) +
+  geom_point()
+```
+
+
+
